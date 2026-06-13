@@ -220,7 +220,7 @@ def search_movies(query):
     movies.sort(key=lambda x: (x.get('score', 0), x['seeders']), reverse=True)
     return movies
 
-def find_best_episode_torrent(show_name, season, episode):
+def find_best_episode_torrent(show_name, season, episode, all_candidates=False):
     """
     Finds the best torrent for a specific show episode (e.g. S01E01)
     """
@@ -323,6 +323,8 @@ def find_best_episode_torrent(show_name, season, episode):
         
     # Sort by score descending, then by seeders descending
     valid_torrents.sort(key=lambda x: (x['score'], x['seeders']), reverse=True)
+    if all_candidates:
+        return valid_torrents
     return valid_torrents[0]
 
 def search_archive_org(query):

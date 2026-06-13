@@ -28,7 +28,17 @@ class TorrentDownloader:
     def start(self):
         if not self.is_running:
             self.is_running = True
-            self.session = lt.session({'listen_interfaces': '0.0.0.0:6881'})
+            # Enable high-speed peer discovery features (UPnP, NAT-PMP, DHT, LSD) and connection limits
+            self.session = lt.session({
+                'listen_interfaces': '0.0.0.0:6881',
+                'enable_upnp': True,
+                'enable_natpmp': True,
+                'enable_dht': True,
+                'enable_lsd': True,
+                'download_rate_limit': 0,
+                'upload_rate_limit': 0,
+                'connections_limit': 300
+            })
             self.thread = threading.Thread(target=self._worker, daemon=True)
             self.thread.start()
             
@@ -36,7 +46,7 @@ class TorrentDownloader:
         self.is_running = False
         self.cancel_current = True
             
-    def add_job(self, info_hash, torrent_name, display_name, show_name=None, season=None, episode=None, is_movie=False, batch_id=None, output_dir=None):
+    def add_job(self, info_hash, torrent_name, display_name, show_name=None, season=None, episode=None, is_movie=False, batch_id=None, output_dir=None, alternatives=None):
         job = {
             'info_hash': info_hash,
             'torrent_name': torrent_name,
@@ -47,7 +57,8 @@ class TorrentDownloader:
             'is_movie': is_movie,
             'batch_id': batch_id,
             'output_dir': output_dir,
-            'status': 'queued'
+            'status': 'queued',
+            'alternatives': alternatives or []
         }
         self.queue.append(job)
         return job
@@ -66,11 +77,6 @@ class TorrentDownloader:
             self.cancel_current = False
             job['status'] = 'downloading'
             
-            # Temporary download dir
-            # Temporary download dir
-            temp_download_dir = os.path.join(self.staging_dir, f"temp_{job['info_hash']}")
-            os.makedirs(temp_download_dir, exist_ok=True)
-            
             # Define final destination directory early so it's always available (prevents UnboundLocalError on failure)
             if job['is_movie']:
                 final_dest_dir = job['output_dir']
@@ -80,110 +86,140 @@ class TorrentDownloader:
             
             success = False
             result_path = None
-            handle = None
             
-            try:
-                # Add torrent
-                magnet_link = f"magnet:?xt=urn:btih:{job['info_hash']}&dn={urllib.parse.quote(job['torrent_name'])}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://tracker.coppersurfer.tk:6969/announce&tr=udp://open.demonii.com:1337/announce&tr=udp://tracker.openbittorrent.com:80"
-                params = lt.parse_magnet_uri(magnet_link)
-                params.save_path = temp_download_dir
+            # Auto-retry loop to cycle through alternatives if the primary magnet fails (no seeders/peers)
+            while True:
+                temp_download_dir = os.path.join(self.staging_dir, f"temp_{job['info_hash']}")
+                os.makedirs(temp_download_dir, exist_ok=True)
+                handle = None
                 
-                handle = self.session.add_torrent(params)
-                
-                # Wait for metadata (reverted timeout to 15s to fail fast if no seeders)
-                metadata_timeout = 15
-                start_time = time.time()
-                while not handle.has_metadata():
-                    if self.cancel_current or not self.is_running:
-                        break
-                    if time.time() - start_time > metadata_timeout:
-                        break
-                    
-                    if self.progress_callback:
-                        self.progress_callback(job['display_name'], 0.0, 0.0, handle.status().num_peers, "Fetching Metadata...")
-                    time.sleep(1)
-                    
-                if not handle.has_metadata():
-                    raise Exception("Failed to retrieve torrent metadata (no seeders/peers found)")
-                    
-                if self.cancel_current or not self.is_running:
-                    raise Exception("Job cancelled by user")
-                    
-                # Download torrent
-                torrent_info = handle.get_torrent_info()
-                print(f"Metadata loaded. Downloading {torrent_info.name()}...")
-                
-                while handle.status().state != lt.torrent_status.seeding:
-                    if self.cancel_current or not self.is_running:
-                        break
-                    
-                    s = handle.status()
-                    state_str = ['queued', 'checking', 'downloading metadata', 'downloading', 'finished', 'seeding', 'allocating', 'checking fastresume'][s.state]
-                    
-                    progress_pct = s.progress * 100
-                    speed_mb = s.download_rate / (1024 * 1024)
-                    peers = s.num_peers
-                    
-                    if self.progress_callback:
-                        self.progress_callback(job['display_name'], progress_pct, speed_mb, peers, state_str)
-                    
-                    if s.progress >= 1.0:
-                        break
-                        
-                    time.sleep(1)
-                    
-                if self.cancel_current or not self.is_running:
-                    raise Exception("Job cancelled by user")
-                    
-                # Download complete! Locate the main video file
-                video_extensions = ['.mp4', '.mkv', '.avi', '.m4v', '.mov', '.ts']
-                largest_file = None
-                largest_size = 0
-                
-                for root, dirs, files in os.walk(temp_download_dir):
-                    for file in files:
-                        ext = os.path.splitext(file)[1].lower()
-                        if ext in video_extensions:
-                            file_path = os.path.join(root, file)
-                            file_size = os.path.getsize(file_path)
-                            if file_size > largest_size:
-                                largest_size = file_size
-                                largest_file = file_path
-                                
-                if not largest_file:
-                    raise Exception("No video file found in downloaded torrent content")
-                    
-                # Post-processing: Copy file as-is (preserving original quality and audio tracks)
-                clean_name = self._generate_clean_filename(job, os.path.splitext(largest_file)[1])
-                
-                os.makedirs(final_dest_dir, exist_ok=True)
-                target_file_path = os.path.join(final_dest_dir, clean_name)
-                
-                if self.progress_callback:
-                    self.progress_callback(job['display_name'], 100.0, 0.0, 0, "Saving file...")
-                    
-                print(f"Copying file {largest_file} to {target_file_path}")
-                shutil.copy2(largest_file, target_file_path)
-                result_path = target_file_path
-                success = True
-                
-            except Exception as e:
-                print(f"Error processing job {job['display_name']}: {e}")
-                result_path = str(e)
-                
-            finally:
-                # Remove torrent from session and delete temporary files
                 try:
-                    if handle:
-                        self.session.remove_torrent(handle, lt.session.delete_files)
-                except Exception as clean_err:
-                    print(f"Error removing torrent: {clean_err}")
-                
-                if os.path.exists(temp_download_dir):
+                    # Add torrent
+                    magnet_link = f"magnet:?xt=urn:btih:{job['info_hash']}&dn={urllib.parse.quote(job['torrent_name'])}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://tracker.coppersurfer.tk:6969/announce&tr=udp://open.demonii.com:1337/announce&tr=udp://tracker.openbittorrent.com:80"
+                    params = lt.parse_magnet_uri(magnet_link)
+                    params.save_path = temp_download_dir
+                    
+                    handle = self.session.add_torrent(params)
+                    
+                    # Wait for metadata (timeout set to 25s to fail fast if no seeders)
+                    metadata_timeout = 25
+                    start_time = time.time()
+                    while not handle.has_metadata():
+                        if self.cancel_current or not self.is_running:
+                            break
+                        if time.time() - start_time > metadata_timeout:
+                            break
+                        
+                        if self.progress_callback:
+                            self.progress_callback(job['display_name'], 0.0, 0.0, handle.status().num_peers, "Fetching Metadata...")
+                        time.sleep(1)
+                        
+                    if not handle.has_metadata():
+                        raise Exception("Failed to retrieve torrent metadata (no seeders/peers found)")
+                        
+                    if self.cancel_current or not self.is_running:
+                        raise Exception("Job cancelled by user")
+                        
+                    # Download torrent
+                    torrent_info = handle.get_torrent_info()
+                    print(f"Metadata loaded. Downloading {torrent_info.name()}...")
+                    
+                    while handle.status().state != lt.torrent_status.seeding:
+                        if self.cancel_current or not self.is_running:
+                            break
+                        
+                        s = handle.status()
+                        state_str = ['queued', 'checking', 'downloading metadata', 'downloading', 'finished', 'seeding', 'allocating', 'checking fastresume'][s.state]
+                        
+                        progress_pct = s.progress * 100
+                        speed_mb = s.download_rate / (1024 * 1024)
+                        peers = s.num_peers
+                        
+                        if self.progress_callback:
+                            self.progress_callback(job['display_name'], progress_pct, speed_mb, peers, state_str)
+                        
+                        if s.progress >= 1.0:
+                            break
+                            
+                        time.sleep(1)
+                        
+                    if self.cancel_current or not self.is_running:
+                        raise Exception("Job cancelled by user")
+                        
+                    # Download complete! Locate the main video file
+                    video_extensions = ['.mp4', '.mkv', '.avi', '.m4v', '.mov', '.ts']
+                    largest_file = None
+                    largest_size = 0
+                    
+                    for root, dirs, files in os.walk(temp_download_dir):
+                        for file in files:
+                            ext = os.path.splitext(file)[1].lower()
+                            if ext in video_extensions:
+                                file_path = os.path.join(root, file)
+                                file_size = os.path.getsize(file_path)
+                                if file_size > largest_size:
+                                    largest_size = file_size
+                                    largest_file = file_path
+                                    
+                    if not largest_file:
+                        raise Exception("No video file found in downloaded torrent content")
+                        
+                    # Pause the torrent and wait to release Windows file handle locks before copy
                     try:
-                        shutil.rmtree(temp_download_dir)
+                        handle.pause()
+                        time.sleep(1.0)
+                    except Exception as pause_err:
+                        print(f"Error pausing torrent: {pause_err}")
+                        
+                    # Post-processing: Copy file as-is (preserving original quality and audio tracks)
+                    clean_name = self._generate_clean_filename(job, os.path.splitext(largest_file)[1])
+                    
+                    os.makedirs(final_dest_dir, exist_ok=True)
+                    target_file_path = os.path.join(final_dest_dir, clean_name)
+                    
+                    if self.progress_callback:
+                        self.progress_callback(job['display_name'], 100.0, 0.0, 0, "Saving file...")
+                        
+                    print(f"Copying file {largest_file} to {target_file_path}")
+                    shutil.copy2(largest_file, target_file_path)
+                    result_path = target_file_path
+                    success = True
+                    break # Success! Exit the retry loop
+                    
+                except Exception as e:
+                    print(f"Error processing torrent {job['info_hash']} for job {job['display_name']}: {e}")
+                    result_path = str(e)
+                    
+                finally:
+                    # Remove torrent from session and delete temporary files
+                    try:
+                        if handle:
+                            self.session.remove_torrent(handle, lt.session.delete_files)
                     except Exception as clean_err:
-                        print(f"Error cleaning temp directory: {clean_err}")
+                        print(f"Error removing torrent: {clean_err}")
+                    
+                    # Small wait for file systems to release and delete temp dir
+                    time.sleep(0.5)
+                    if os.path.exists(temp_download_dir):
+                        try:
+                            shutil.rmtree(temp_download_dir)
+                        except Exception as clean_err:
+                            print(f"Error cleaning temp directory: {clean_err}")
+                            
+                # If we got here and failed, try the next alternative if any exist
+                if self.cancel_current or not self.is_running:
+                    break
+                    
+                if job.get('alternatives'):
+                    alt = job['alternatives'].pop(0)
+                    job['info_hash'] = alt['info_hash']
+                    job['torrent_name'] = alt.get('name') or alt.get('title')
+                    print(f"Retrying job {job['display_name']} with alternative torrent: {job['torrent_name']}")
+                    if self.progress_callback:
+                        self.progress_callback(job['display_name'], 0.0, 0.0, 0, "Retrying with alt...")
+                    time.sleep(1.0)
+                else:
+                    break
             
             # Notify GUI of completion
             if self.completion_callback:

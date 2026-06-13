@@ -420,18 +420,21 @@ class App(ctk.CTk):
                         text=f"Searching torrent for: {name}"
                     ))
                     
-                    torrent = search_engine.find_best_episode_torrent(item['title'], ep['season'], ep['number'])
-                    if torrent:
+                    torrents = search_engine.find_best_episode_torrent(item['title'], ep['season'], ep['number'], all_candidates=True)
+                    if torrents:
+                        best_torrent = torrents[0]
+                        alternatives = torrents[1:5] # Keep up to 4 backup candidates
                         self.dl.add_job(
-                            info_hash=torrent['info_hash'],
-                            torrent_name=torrent['name'],
+                            info_hash=best_torrent['info_hash'],
+                            torrent_name=best_torrent['name'],
                             display_name=display_name,
                             show_name=item['title'],
                             season=ep['season'],
                             episode=ep['number'],
                             is_movie=False,
                             batch_id=batch_id,
-                            output_dir=save_dir
+                            output_dir=save_dir,
+                            alternatives=alternatives
                         )
                         added_count += 1
                         self.after(0, self.refresh_queue_sidebar)
@@ -458,6 +461,10 @@ class App(ctk.CTk):
             def enqueue_movie():
                 display_name = f"{item['title']} ({item['year']})"
                 
+                # Fetch alternative torrents for the movie
+                movie_torrents = search_engine.search_movies(item['title'])
+                alternatives = [t for t in movie_torrents if t['info_hash'] != item['info_hash']][:4]
+                
                 self.dl.add_job(
                     info_hash=item['info_hash'],
                     torrent_name=item['title'],
@@ -465,7 +472,8 @@ class App(ctk.CTk):
                     show_name=item['title'],
                     is_movie=True,
                     batch_id=batch_id,
-                    output_dir=save_dir
+                    output_dir=save_dir,
+                    alternatives=alternatives
                 )
                 
                 def finalize():
