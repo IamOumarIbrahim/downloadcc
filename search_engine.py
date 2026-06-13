@@ -172,6 +172,16 @@ def search_movies(query):
                 'size': size_bytes
             })
             
+    # Filter out dead torrents if any seeded torrents exist to avoid metadata hangs
+    if movies:
+        has_seeded = any(m['seeders'] > 0 for m in movies)
+        if has_seeded:
+            has_healthy = any(m['seeders'] >= 3 for m in movies)
+            if has_healthy:
+                movies = [m for m in movies if m['seeders'] >= 3]
+            else:
+                movies = [m for m in movies if m['seeders'] > 0]
+            
     # Calculate score for each movie to prefer 720p and smaller sizes
     for m in movies:
         name_lower = m['title'].lower()
@@ -263,6 +273,15 @@ def find_best_episode_torrent(show_name, season, episode):
                 
     if not valid_torrents:
         return None
+        
+    # Filter out dead torrents if any seeded torrents exist to avoid metadata hangs
+    has_seeded = any(t['seeders'] > 0 for t in valid_torrents)
+    if has_seeded:
+        has_healthy = any(t['seeders'] >= 3 for t in valid_torrents)
+        if has_healthy:
+            valid_torrents = [t for t in valid_torrents if t['seeders'] >= 3]
+        else:
+            valid_torrents = [t for t in valid_torrents if t['seeders'] > 0]
         
     # Calculate score for each torrent to prefer 720p and smaller sizes
     for t in valid_torrents:

@@ -67,8 +67,16 @@ class TorrentDownloader:
             job['status'] = 'downloading'
             
             # Temporary download dir
+            # Temporary download dir
             temp_download_dir = os.path.join(self.staging_dir, f"temp_{job['info_hash']}")
             os.makedirs(temp_download_dir, exist_ok=True)
+            
+            # Define final destination directory early so it's always available (prevents UnboundLocalError on failure)
+            if job['is_movie']:
+                final_dest_dir = job['output_dir']
+            else:
+                show_clean = re.sub(r'[\\/*?:"<>|]', "", job['show_name'] or "TV Show")
+                final_dest_dir = os.path.join(job['output_dir'], f"{show_clean} - Season {job['season']:02d}")
             
             success = False
             result_path = None
@@ -82,8 +90,8 @@ class TorrentDownloader:
                 
                 handle = self.session.add_torrent(params)
                 
-                # Wait for metadata
-                metadata_timeout = 60
+                # Wait for metadata (reverted timeout to 15s to fail fast if no seeders)
+                metadata_timeout = 15
                 start_time = time.time()
                 while not handle.has_metadata():
                     if self.cancel_current or not self.is_running:
@@ -148,12 +156,6 @@ class TorrentDownloader:
                 # Post-processing: Copy file as-is (preserving original quality and audio tracks)
                 clean_name = self._generate_clean_filename(job, os.path.splitext(largest_file)[1])
                 
-                if job['is_movie']:
-                    final_dest_dir = job['output_dir']
-                else:
-                    show_clean = re.sub(r'[\\/*?:"<>|]', "", job['show_name'] or "TV Show")
-                    final_dest_dir = os.path.join(job['output_dir'], f"{show_clean} - Season {job['season']:02d}")
-                    
                 os.makedirs(final_dest_dir, exist_ok=True)
                 target_file_path = os.path.join(final_dest_dir, clean_name)
                 
@@ -173,7 +175,7 @@ class TorrentDownloader:
                 # Remove torrent from session and delete temporary files
                 try:
                     if handle:
-                        self.session.remove_torrent(handle, delete_files=True)
+                        self.session.remove_torrent(handle, lt.session.delete_files)
                 except Exception as clean_err:
                     print(f"Error removing torrent: {clean_err}")
                 
