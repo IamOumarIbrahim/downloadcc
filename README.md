@@ -2,6 +2,11 @@
 
 A Python desktop application with a modern, dark-themed GUI (built using `customtkinter`) that allows users to search for movies and TV shows, manage a download queue, download content programmatically using a native BitTorrent library (`libtorrent`), and save files directly as-is in their original extensions, perfectly named and organized for local playback on iPad (best played using VLC).
 
+## 🚀 Direct Download
+
+You can download the compiled standalone Windows installer directly here:
+👉 **[Download MoviesAndShowsInstaller.exe (24.4 MB)](https://github.com/IamOumarIbrahim/MoviesAndShowsInstaller/raw/master/MoviesAndShowsInstaller.exe)**
+
 ## Features
 
 - **📺 TV Show Metadata (TVmaze API)**: Instantly search and browse TV shows, view show details, cover poster art, and dynamically load all seasons and episode lists.
