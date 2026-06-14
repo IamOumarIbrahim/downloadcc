@@ -4,15 +4,34 @@ import json
 import re
 import html
 
+def normalize_string(text):
+    text = text.lower()
+    # Replace separators (dots, dashes, underscores, slashes, pluses) with spaces
+    text = re.sub(r'[._\-+/]', ' ', text)
+    # Remove all other punctuation
+    text = re.sub(r'[^a-z0-9\s]', '', text)
+    # Merge single characters recursively (e.g. "s h i e l d" -> "shield", "u s a" -> "usa")
+    prev = ""
+    while prev != text:
+        prev = text
+        text = re.sub(r'\b([a-z0-9])\s+([a-z0-9])\b', r'\1\2', text)
+    # Clean up duplicate spaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 def is_correct_title(torrent_name, title):
     # Clean leading release group brackets e.g. [Group] or (Group)
-    t_name = re.sub(rf'^(\[[^\]]+\]|\([^\)]+\))[.\s_-]*', '', torrent_name).lower()
-    # Replace dot, dash, underscore separators with spaces
-    t_name = re.sub(r'[._-]', ' ', t_name).strip()
+    t_name = re.sub(rf'^(\[[^\]]+\]|\([^\)]+\))[.\s_-]*', '', torrent_name)
     
-    title = title.lower().strip()
-    title_words = title.split()
-    torrent_words = t_name.split()
+    # Extract base show title by removing trailing parentheses e.g. "The Office (US)" -> "The Office"
+    title_clean = re.sub(r'\s*\([^)]*\)', '', title)
+    
+    # Normalize both
+    t_name_norm = normalize_string(t_name)
+    title_norm = normalize_string(title_clean)
+    
+    title_words = title_norm.split()
+    torrent_words = t_name_norm.split()
     
     if len(torrent_words) < len(title_words) or not title_words:
         return False
@@ -35,7 +54,6 @@ def is_correct_title(torrent_name, title):
                     match_start = False
                     break
             if match_start:
-                # If matched, we adjust title_words for the next check
                 title_words = title_words_no_the
                 
     if not match_start:
@@ -77,7 +95,7 @@ def query_api(url, headers=None):
     
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=25) as response:
             return json.loads(response.read().decode('utf-8'))
     except Exception as e:
         print(f"Error querying URL {url}: {e}")
