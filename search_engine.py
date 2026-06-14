@@ -126,6 +126,10 @@ def search_tv_shows(query):
         images = show_data.get('image') or {}
         poster_url = images.get('medium') or images.get('original') or ""
         
+        imdb_id = show_data.get('externals', {}).get('imdb') or ""
+        if imdb_id and imdb_id.startswith('tt'):
+            imdb_id = imdb_id[2:]
+            
         shows.append({
             'id': show_id,
             'title': name,
@@ -133,7 +137,8 @@ def search_tv_shows(query):
             'summary': summary,
             'poster_url': poster_url,
             'type': 'show',
-            'genres': ", ".join(show_data.get('genres', []))
+            'genres': ", ".join(show_data.get('genres', [])),
+            'imdb_id': imdb_id
         })
     return shows
 
@@ -164,11 +169,11 @@ def search_movies(query):
     """
     url = f"https://apibay.org/q.php?q={urllib.parse.quote(query)}"
     results = query_api(url)
-    if not results or not isinstance(results, list):
-        return []
-    
-    # Filter out empty results (apibay returns a single item list [{'id': '0', ...}] if nothing found)
-    if len(results) == 1 and results[0].get('id') == '0':
+    if not results or not isinstance(results, list) or (len(results) == 1 and results[0].get('id') == '0'):
+        print("APIBay search failed or empty, trying fallback proxies...")
+        results = search_via_proxies(query)
+        
+    if not results or not isinstance(results, list) or (len(results) == 1 and results[0].get('id') == '0'):
         return []
         
     movies = []
@@ -238,57 +243,62 @@ def search_movies(query):
     movies.sort(key=lambda x: (x.get('score', 0), x['seeders']), reverse=True)
     return movies
 
-def find_best_episode_torrent(show_name, season, episode, all_candidates=False):
+def find_best_episode_torrent(show_name, season, episode, all_candidates=False, imdb_id=None):
     """
     Finds the best torrent for a specific show episode (e.g. S01E01)
     """
-    # Search formats: "Show Name S01E01"
-    query = f"{show_name} S{season:02d}E{episode:02d}"
-    url = f"https://apibay.org/q.php?q={urllib.parse.quote(query)}"
-    
-    results = query_api(url)
-    if not results or not isinstance(results, list):
-        return None
-        
-    if len(results) == 1 and results[0].get('id') == '0':
-        return None
-        
     valid_torrents = []
-    # Pattern to match current season and episode
-    # e.g., matches s01e01, 1x01, s1e1, s01.e01, etc.
-    s_ep_pattern = re.compile(rf'(s{season:02d}e{episode:02d}|s{season}e{episode}|{season}x{episode:02d}|{season}x{episode})', re.IGNORECASE)
     
-    for item in results:
-        name = item.get('name', '')
-        if s_ep_pattern.search(name) and is_correct_title(name, show_name):
-            size_bytes = int(item.get('size', 0))
-            size_mb = size_bytes / (1024 * 1024)
-            
-            # Filters: Episode size usually between 40MB and 2.5GB
-            if 40 < size_mb < 2500:
-                valid_torrents.append({
-                    'id': item.get('id'),
-                    'name': name,
-                    'info_hash': item.get('info_hash'),
-                    'seeders': int(item.get('seeders', 0)),
-                    'leechers': int(item.get('leechers', 0)),
-                    'size': size_bytes
-                })
-                
+    # Try EZTV first if IMDb ID is available
+    if imdb_id:
+        valid_torrents = find_torrents_from_eztv(imdb_id, season, episode)
+        
     if not valid_torrents:
-        # Fallback: if no size filter matched, take the most seeded overall matching name
-        for item in results:
-            name = item.get('name', '')
-            if s_ep_pattern.search(name) and is_correct_title(name, show_name):
-                valid_torrents.append({
-                    'id': item.get('id'),
-                    'name': name,
-                    'info_hash': item.get('info_hash'),
-                    'seeders': int(item.get('seeders', 0)),
-                    'leechers': int(item.get('leechers', 0)),
-                    'size': int(item.get('size', 0))
-                })
-                
+        # Search formats: "Show Name S01E01"
+        query = f"{show_name} S{season:02d}E{episode:02d}"
+        url = f"https://apibay.org/q.php?q={urllib.parse.quote(query)}"
+        
+        results = query_api(url)
+        if not results or not isinstance(results, list) or (len(results) == 1 and results[0].get('id') == '0'):
+            print("APIBay episode query failed or empty, trying fallback proxies...")
+            results = search_via_proxies(query)
+            
+        if results and isinstance(results, list) and not (len(results) == 1 and results[0].get('id') == '0'):
+            # Pattern to match current season and episode
+            # e.g., matches s01e01, 1x01, s1e1, s01.e01, etc.
+            s_ep_pattern = re.compile(rf'(s{season:02d}e{episode:02d}|s{season}e{episode}|{season}x{episode:02d}|{season}x{episode})', re.IGNORECASE)
+            
+            for item in results:
+                name = item.get('name', '')
+                if s_ep_pattern.search(name) and is_correct_title(name, show_name):
+                    size_bytes = int(item.get('size', 0))
+                    size_mb = size_bytes / (1024 * 1024)
+                    
+                    # Filters: Episode size usually between 40MB and 2.5GB
+                    if 40 < size_mb < 2500:
+                        valid_torrents.append({
+                            'id': item.get('id'),
+                            'name': name,
+                            'info_hash': item.get('info_hash'),
+                            'seeders': int(item.get('seeders', 0)),
+                            'leechers': int(item.get('leechers', 0)),
+                            'size': size_bytes
+                        })
+                        
+            if not valid_torrents:
+                # Fallback: if no size filter matched, take the most seeded overall matching name
+                for item in results:
+                    name = item.get('name', '')
+                    if s_ep_pattern.search(name) and is_correct_title(name, show_name):
+                        valid_torrents.append({
+                            'id': item.get('id'),
+                            'name': name,
+                            'info_hash': item.get('info_hash'),
+                            'seeders': int(item.get('seeders', 0)),
+                            'leechers': int(item.get('leechers', 0)),
+                            'size': int(item.get('size', 0))
+                        })
+                        
     if not valid_torrents:
         return None
         
@@ -379,3 +389,162 @@ def search_archive_org(query):
     except Exception as e:
         print(f"Error searching Archive.org: {e}")
         return []
+
+def parse_tpb_html(html_content):
+    rows = re.findall(r'<tr.*?>.*?</tr>', html_content, re.DOTALL)
+    results = []
+    for row in rows:
+        if 'class="header"' in row:
+            continue
+        
+        magnet_match = re.search(r'href="(magnet:\?xt=urn:btih:([a-zA-Z0-9]+)&[^"]+)"', row)
+        if not magnet_match:
+            continue
+        magnet_url = magnet_match.group(1)
+        info_hash = magnet_match.group(2).lower()
+        
+        title_match = re.search(r'href="[^"]*/torrent/\d+/[^"]*"[^>]*>(.*?)</a>', row)
+        if title_match:
+            title = title_match.group(1)
+        else:
+            dn_match = re.search(r'dn=([^&]+)', magnet_url)
+            if dn_match:
+                title = urllib.parse.unquote(dn_match.group(1))
+            else:
+                title = "Unknown"
+        title = re.sub(r'<[^>]*>', '', title).strip()
+        
+        td_rights = re.findall(r'<td\s+align="right">(.*?)</td>', row, re.DOTALL)
+        
+        has_size_column = False
+        if len(td_rights) >= 3:
+            first_val = td_rights[0].lower()
+            if any(unit in first_val for unit in ['b', 'kb', 'mb', 'gb', 'tb', 'ib']):
+                has_size_column = True
+                
+        if has_size_column:
+            size_str = td_rights[0].replace('&nbsp;', ' ').strip()
+            seeders_str = td_rights[1].strip()
+            leechers_str = td_rights[2].strip()
+        else:
+            seeders_str = td_rights[0].strip() if len(td_rights) > 0 else "0"
+            leechers_str = td_rights[1].strip() if len(td_rights) > 1 else "0"
+            
+            size_match = re.search(r'[Ss]ize\s*([\d.]+)\s*(?:&nbsp;|\s)*([a-zA-Z]+)', row)
+            if size_match:
+                size_str = f"{size_match.group(1)} {size_match.group(2)}"
+            else:
+                size_str = "0 B"
+                
+        size_bytes = 0
+        try:
+            val_match = re.match(r'([\d.]+)\s*(\w+)', size_str)
+            if val_match:
+                val = float(val_match.group(1))
+                unit = val_match.group(2).lower()
+                if 'gib' in unit or 'gb' in unit:
+                    size_bytes = int(val * 1024 * 1024 * 1024)
+                elif 'mib' in unit or 'mb' in unit:
+                    size_bytes = int(val * 1024 * 1024)
+                elif 'kib' in unit or 'kb' in unit:
+                    size_bytes = int(val * 1024)
+                else:
+                    size_bytes = int(val)
+        except Exception:
+            pass
+            
+        try:
+            seeders = int(seeders_str)
+        except ValueError:
+            seeders = 0
+            
+        try:
+            leechers = int(leechers_str)
+        except ValueError:
+            leechers = 0
+            
+        cat_id = '299'
+        vert_th_match = re.search(r'class="vertTh">(.*?)</td>', row, re.DOTALL)
+        if vert_th_match:
+            vert_th_content = vert_th_match.group(1)
+            cat_ids = re.findall(r'browse/(\d+)', vert_th_content)
+            if cat_ids:
+                cat_id = cat_ids[-1]
+        
+        results.append({
+            'id': info_hash,
+            'name': title,
+            'info_hash': info_hash,
+            'size': size_bytes,
+            'seeders': seeders,
+            'leechers': leechers,
+            'category': cat_id
+        })
+    return results
+
+def search_via_proxies(query_str):
+    proxies = [
+        "https://tpb.party/search/{query}/1/99/0",
+        "https://thepiratebay.zone/search/{query}/1/99/0",
+        "https://tpb.wtf/search/{query}/1/99/0"
+    ]
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    encoded_query = urllib.parse.quote(query_str)
+    
+    for proxy_template in proxies:
+        url = proxy_template.format(query=encoded_query)
+        print(f"Trying fallback proxy: {url}")
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as response:
+                html_content = response.read().decode('utf-8')
+                results = parse_tpb_html(html_content)
+                if results:
+                    print(f"Successfully retrieved {len(results)} results from proxy {url}")
+                    return results
+        except Exception as e:
+            print(f"Proxy request failed for {url}: {e}")
+            continue
+    return []
+
+def find_torrents_from_eztv(imdb_id, season, episode):
+    mirrors = [
+        "https://eztv.wf",
+        "https://eztv1.xyz",
+        "https://eztv.tf",
+        "https://eztv.yt"
+    ]
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    
+    for mirror in mirrors:
+        url = f"{mirror}/api/get-torrents?imdb_id={imdb_id}"
+        print(f"Trying EZTV query: {url}")
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                torrents = data.get('torrents', [])
+                matching_torrents = []
+                for t in torrents:
+                    try:
+                        t_season = int(t.get('season', 0))
+                        t_episode = int(t.get('episode', 0))
+                        if t_season == season and t_episode == episode:
+                            matching_torrents.append({
+                                'id': str(t.get('id', '')),
+                                'name': t.get('title', t.get('filename', '')),
+                                'info_hash': t.get('hash', '').lower(),
+                                'seeders': int(t.get('seeds', 0)),
+                                'leechers': int(t.get('peers', 0)),
+                                'size': int(t.get('size_bytes', 0))
+                            })
+                    except Exception:
+                        continue
+                if matching_torrents:
+                    print(f"Successfully retrieved {len(matching_torrents)} matching torrents from EZTV")
+                    return matching_torrents
+        except Exception as e:
+            print(f"EZTV mirror request failed for {url}: {e}")
+            continue
+    return []
+

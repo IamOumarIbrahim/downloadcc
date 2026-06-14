@@ -420,7 +420,7 @@ class App(ctk.CTk):
                         text=f"Searching torrent for: {name}"
                     ))
                     
-                    torrents = search_engine.find_best_episode_torrent(item['title'], ep['season'], ep['number'], all_candidates=True)
+                    torrents = search_engine.find_best_episode_torrent(item['title'], ep['season'], ep['number'], all_candidates=True, imdb_id=item.get('imdb_id'))
                     if torrents:
                         best_torrent = torrents[0]
                         alternatives = torrents[1:5] # Keep up to 4 backup candidates
