@@ -91,6 +91,11 @@ You can run `downloadcc` globally from any terminal session.
   - **`downloadcc clear`**: Clears all pending items from the queue.
   - **`downloadcc vlc ["Folder or File"]`**: Launches the wireless uploader to push downloaded files directly to the VLC app on your iPad. If the folder/file is not specified, it lets you select from your workspace folders. Displays real-time progress bars for uploads.
 
+* **Suggestions & Help**:
+  - **`downloadcc suggest`**: Blends high-rated recent movies (live from YTS API) and popular TV shows (curated database) sorted by user rating, letting you select and add them to your queue.
+  - **`downloadcc suggest genre`**: Displays a list of major genres (Action, Sci-Fi, Comedy, etc.), lets you choose one, and returns recommendations filtered by that genre.
+  - **`downloadcc help`** / **`--help`**: Shows a detailed CLI help menu with usage guidelines and explanations of all commands.
+
 ---
 
 ## ⚡ Resuming & Self-Healing

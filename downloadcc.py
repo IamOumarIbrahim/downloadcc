@@ -23,7 +23,40 @@ WORKSPACE_DIR = r"d:\Downloads\Videos"
 if not os.path.exists(WORKSPACE_DIR):
     WORKSPACE_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
 
-VERSION = "3.0"
+VERSION = "3.1"
+
+CURATED_SHOWS = [
+    {"title": "The Last of Us", "year": "2023", "id": 46562, "rating": 8.8, "genres": ["Action", "Adventure", "Drama", "Sci-Fi", "Thriller"], "imdb_id": "tt1424942"},
+    {"title": "Succession", "year": "2018", "id": 30784, "rating": 8.8, "genres": ["Drama"], "imdb_id": "tt7660850"},
+    {"title": "The Bear", "year": "2022", "id": 61491, "rating": 8.6, "genres": ["Comedy", "Drama"], "imdb_id": "tt14452778"},
+    {"title": "Severance", "year": "2022", "id": 45182, "rating": 8.7, "genres": ["Drama", "Sci-Fi", "Mystery", "Thriller"], "imdb_id": "tt11280740"},
+    {"title": "Shogun", "year": "2024", "id": 37945, "rating": 8.8, "genres": ["Drama", "History", "War", "Action", "Adventure"], "imdb_id": "tt8887038"},
+    {"title": "The Boys", "year": "2019", "id": 35741, "rating": 8.7, "genres": ["Action", "Sci-Fi", "Thriller", "Adventure"], "imdb_id": "tt1190634"},
+    {"title": "Stranger Things", "year": "2016", "id": 2993, "rating": 8.7, "genres": ["Drama", "Fantasy", "Horror", "Mystery", "Sci-Fi", "Thriller"], "imdb_id": "tt5013056"},
+    {"title": "Fargo", "year": "2014", "id": 27, "rating": 8.9, "genres": ["Drama", "Crime", "Thriller"], "imdb_id": "tt2802850"},
+    {"title": "Better Call Saul", "year": "2015", "id": 618, "rating": 8.9, "genres": ["Drama", "Crime"], "imdb_id": "tt3032476"},
+    {"title": "The White Lotus", "year": "2021", "id": 51336, "rating": 8.0, "genres": ["Comedy", "Drama"], "imdb_id": "tt13406094"},
+    {"title": "House of the Dragon", "year": "2022", "id": 44778, "rating": 8.4, "genres": ["Action", "Adventure", "Drama", "Fantasy"], "imdb_id": "tt11198330"},
+    {"title": "Mr. Robot", "year": "2015", "id": 180, "rating": 8.5, "genres": ["Drama", "Crime", "Thriller"], "imdb_id": "tt4158110"},
+    {"title": "Invincible", "year": "2021", "id": 37906, "rating": 8.7, "genres": ["Action", "Adventure", "Sci-Fi", "Fantasy"], "imdb_id": "tt6741478"},
+    {"title": "Ted Lasso", "year": "2020", "id": 45595, "rating": 8.8, "genres": ["Comedy", "Drama"], "imdb_id": "tt10986410"},
+    {"title": "Dark", "year": "2017", "id": 25043, "rating": 8.7, "genres": ["Drama", "Mystery", "Sci-Fi", "Thriller"], "imdb_id": "tt5753856"},
+    {"title": "Arcane", "year": "2021", "id": 44855, "rating": 9.0, "genres": ["Action", "Adventure", "Sci-Fi", "Fantasy"], "imdb_id": "tt11126994"},
+    {"title": "Yellowstone", "year": "2018", "id": 30715, "rating": 8.7, "genres": ["Drama", "Western"], "imdb_id": "tt4236770"},
+    {"title": "Peaky Blinders", "year": "2013", "id": 269, "rating": 8.8, "genres": ["Drama", "Crime"], "imdb_id": "tt2442522"},
+    {"title": "Andor", "year": "2022", "id": 44754, "rating": 8.4, "genres": ["Action", "Adventure", "Sci-Fi"], "imdb_id": "tt9461280"},
+    {"title": "Fallout", "year": "2024", "id": 49334, "rating": 8.4, "genres": ["Action", "Adventure", "Sci-Fi"], "imdb_id": "tt12637874"},
+    {"title": "True Detective", "year": "2014", "id": 5, "rating": 8.9, "genres": ["Drama", "Crime", "Mystery", "Thriller"], "imdb_id": "tt2356777"},
+    {"title": "The Queen's Gambit", "year": "2020", "id": 42312, "rating": 8.6, "genres": ["Drama"], "imdb_id": "tt10048342"},
+    {"title": "Mindhunter", "year": "2017", "id": 13264, "rating": 8.6, "genres": ["Drama", "Crime", "Thriller"], "imdb_id": "tt5290382"},
+    {"title": "The Mandalorian", "year": "2019", "id": 38963, "rating": 8.7, "genres": ["Action", "Adventure", "Sci-Fi", "Fantasy"], "imdb_id": "tt8111088"},
+    {"title": "Chernobyl", "year": "2019", "id": 30770, "rating": 9.4, "genres": ["Drama", "History"], "imdb_id": "tt8162467"},
+    {"title": "Black Mirror", "year": "2011", "id": 305, "rating": 8.7, "genres": ["Drama", "Sci-Fi", "Thriller"], "imdb_id": "tt2085059"},
+    {"title": "Rick and Morty", "year": "2013", "id": 216, "rating": 9.1, "genres": ["Comedy", "Sci-Fi", "Adventure"], "imdb_id": "tt2861424"},
+    {"title": "The Crown", "year": "2016", "id": 2678, "rating": 8.6, "genres": ["Drama", "History"], "imdb_id": "tt4786824"},
+    {"title": "Reacher", "year": "2022", "id": 46422, "rating": 8.1, "genres": ["Action", "Crime", "Thriller"], "imdb_id": "tt9288030"},
+    {"title": "Slow Horses", "year": "2022", "id": 45330, "rating": 8.1, "genres": ["Drama", "Thriller"], "imdb_id": "tt5875444"},
+]
 
 # Queue Paths
 QUEUE_DIR = os.path.join(os.path.expanduser('~'), '.downloadcc')
@@ -910,6 +943,187 @@ def run_vlc_upload(target_name=None):
             
     print(f"\n\033[1;32m[+] All uploads completed!\033[0m")
 
+def show_suggestions(genre=None):
+    print(f"\n\033[1;34m[*] Fetching top-rated movie and show suggestions...\033[0m")
+    
+    # 1. Fetch movies from YTS
+    movies_list = []
+    try:
+        url = "https://yts.mx/api/v2/list_movies.json?sort_by=rating&minimum_rating=7.5&limit=25"
+        if genre:
+            url += f"&genre={urllib.parse.quote(genre.lower())}"
+        
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode('utf-8'))
+            if res_data.get('status') == 'ok' and 'data' in res_data and 'movies' in res_data['data']:
+                for movie in res_data['data']['movies']:
+                    title = movie.get('title', 'Unknown Movie')
+                    year = str(movie.get('year', ''))
+                    rating = float(movie.get('rating', 0.0))
+                    torrents = movie.get('torrents', [])
+                    if torrents:
+                        # Find the best quality torrent
+                        best_tor = torrents[0]
+                        for tor in torrents:
+                            q = tor.get('quality', '')
+                            if q in ['720p', '1080p']:
+                                best_tor = tor
+                                break
+                        
+                        movies_list.append({
+                            "type": "movie",
+                            "title": title,
+                            "year": year,
+                            "rating": rating,
+                            "info_hash": best_tor.get('hash', '').lower(),
+                            "size_bytes": best_tor.get('size_bytes', 0),
+                            "seeders": best_tor.get('seeds', 0),
+                            "label": f"[Movie] {title} ({year}) - Rating: {rating} ★ [YTS]"
+                        })
+    except Exception as e:
+        print(f"\033[1;31m[!] Error fetching movie suggestions: {e}\033[0m")
+
+    # 2. Filter TV shows from curated database
+    shows_list = []
+    for show in CURATED_SHOWS:
+        if genre:
+            if not any(g.lower() == genre.lower() for g in show["genres"]):
+                continue
+        shows_list.append({
+            "type": "show",
+            "title": show["title"],
+            "year": show["year"],
+            "rating": show["rating"],
+            "id": show["id"],
+            "imdb_id": show["imdb_id"],
+            "label": f"[TV Show] {show['title']} ({show['year']}) - Rating: {show['rating']} ★"
+        })
+
+    # Combine both and sort by rating descending
+    combined = movies_list + shows_list
+    combined.sort(key=lambda x: x["rating"], reverse=True)
+
+    if not combined:
+        print(f"\033[1;33mNo suggestions found for genre '{genre}'\033[0m")
+        return
+
+    prompt_label = f"IMDb High Rated Suggestions (Genre: {genre.capitalize()})" if genre else "IMDb High Rated Suggestions (Recent Years)"
+    selection = interactive_select(combined, prompt_label)
+    if not selection:
+        print("\033[1;31mCancelled.\033[0m")
+        return
+
+    # Process suggestion selection
+    new_item = {
+        "id": str(int(time.time())),
+        "type": selection['type'],
+        "title": selection['title'],
+        "status": "queued",
+        "progress": 0.0,
+        "speed_mb": 0.0,
+        "peers": 0,
+        "eta": "Unknown"
+    }
+
+    if selection['type'] == 'show':
+        show_title = selection['title']
+        show_id = selection['id']
+        
+        print(f"\033[1;34m[*] Loading episodes for '{show_title}'...\033[0m")
+        episodes = search_engine.get_show_episodes(show_id)
+        if not episodes:
+            print("\033[1;31mCould not fetch episodes for this show.\033[0m")
+            return
+            
+        seasons = sorted(list(set(ep['season'] for ep in episodes)))
+        season_options = [{'label': 'All Seasons (Complete Pack)', 'val': None}]
+        for s in seasons:
+            season_options.append({'label': f"Season {s:02d}", 'val': s})
+            
+        season_sel = interactive_select(season_options, f"Select Season for '{show_title}'")
+        if not season_sel:
+            print("\033[1;31mCancelled.\033[0m")
+            return
+            
+        target_season = season_sel['val']
+        new_item["target_season"] = target_season
+        new_item["max_season"] = seasons[-1] if seasons else None
+        new_item["imdb_id"] = selection.get('imdb_id', '')
+        
+        dest_workspace = prompt_output_path()
+        new_item["dest_workspace"] = dest_workspace
+        
+        print(f"\033[1;34m[*] Searching for season/series pack on APIBay...\033[0m")
+        torrent_pack = search_season_pack(show_title, target_season, max_season=new_item["max_season"])
+        
+        show_folder_name = re.sub(r'[\\/*?:"<>|]', "", show_title)
+        dest_dir = os.path.join(dest_workspace, show_folder_name)
+        new_item["dest_dir"] = dest_dir
+        
+        if torrent_pack:
+            new_item["torrent_name"] = torrent_pack['name']
+            new_item["info_hash"] = torrent_pack['info_hash']
+            new_item["staging_dir"] = os.path.join(dest_workspace, "staging_temp_" + new_item["id"])
+        else:
+            target_eps = [ep for ep in episodes if target_season is None or ep['season'] == target_season]
+            new_item["episodes"] = target_eps
+            new_item["torrent_name"] = f"{show_title} (Individual Episodes)"
+            new_item["info_hash"] = "fallback"
+            
+    else:
+        movie_title = selection['title']
+        info_hash = selection['info_hash']
+        
+        dest_workspace = prompt_output_path()
+        new_item["dest_workspace"] = dest_workspace
+        
+        movie_folder_name = re.sub(r'[\\/*?:"<>|]', "", movie_title)
+        dest_dir = os.path.join(dest_workspace, movie_folder_name)
+        new_item["dest_dir"] = dest_dir
+        new_item["torrent_name"] = movie_title
+        new_item["info_hash"] = info_hash
+        new_item["is_movie"] = True
+        new_item["staging_dir"] = os.path.join(dest_workspace, "staging_temp_" + new_item["id"])
+
+    # Append to queue
+    q_data = load_queue()
+    q_data['queue'].append(new_item)
+    save_queue(q_data)
+    
+    print(f"\033[1;32m[+] Added '{new_item['title']}' to download queue.\033[0m")
+    
+    if is_downloader_running():
+        print("\033[1;33m[*] A download process is already running in the background. Your item will be downloaded sequentially.\033[0m")
+    else:
+        print("\033[1;32m[*] Queue is idle. Starting downloads now...\033[0m")
+        process_queue_loop()
+
+def run_suggest_genre():
+    genres = ["Action", "Adventure", "Comedy", "Crime", "Drama", "Fantasy", "Horror", "Mystery", "Sci-Fi", "Thriller"]
+    genre_options = [{'label': g, 'val': g} for g in genres]
+    sel = interactive_select(genre_options, "Select Genre for Recommendations")
+    if sel:
+        show_suggestions(genre=sel['val'])
+
+def show_help():
+    print(f"\n\033[1;35mdownloadcc (v{VERSION}) - Interactive Movies & TV Shows Downloader\033[0m")
+    print("\033[1;30m" + "=" * 60 + "\033[0m")
+    print("Usage: \033[1;36mdownloadcc [command] [args...]\033[0m\n")
+    print("Commands:")
+    print("  \033[1;32mdownloadcc\033[0m                  - Launch search and interactive downloader.")
+    print("  \033[1;32mdownloadcc \"Query\"\033[0m          - Search and select a show/movie to download immediately.")
+    print("  \033[1;32mdownloadcc queue\033[0m            - View active download status and all items in the queue.")
+    print("  \033[1;32mdownloadcc add \"Query\"\033[0m      - Search and add a new item directly to the background queue.")
+    print("  \033[1;32mdownloadcc remove <number>\033[0m  - Remove an item from the queue list by its index number.")
+    print("  \033[1;32mdownloadcc clear\033[0m            - Clear all pending items from the download queue.")
+    print("  \033[1;32mdownloadcc vlc [\"Target\"]\033[0m   - Upload a file/folder wirelessly to VLC on your iPad.")
+    print("  \033[1;32mdownloadcc suggest\033[0m          - Show high-rated movie and TV show suggestions from recent years.")
+    print("  \033[1;32mdownloadcc suggest genre\033[0m    - Show major genres, let you select one, and recommend matching titles.")
+    print("  \033[1;32mdownloadcc help\033[0m             - Show this help menu.")
+    print("\033[1;30m" + "=" * 60 + "\033[0m")
+
 def main():
     init_queue_dir()
     
@@ -941,6 +1155,15 @@ def main():
         elif cmd == 'vlc':
             target_name = " ".join(args[1:]) if len(args) > 1 else None
             run_vlc_upload(target_name)
+            return
+        elif cmd == 'suggest':
+            if len(args) > 1 and args[1].lower() == 'genre':
+                run_suggest_genre()
+            else:
+                show_suggestions()
+            return
+        elif cmd in ['help', '--help', '-h']:
+            show_help()
             return
             
     # Default behavior: run search and interactive selection
