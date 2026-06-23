@@ -3,7 +3,6 @@ import sys
 import re
 import time
 import shutil
-import msvcrt
 import ctypes
 import urllib.parse
 import libtorrent as lt
@@ -23,7 +22,7 @@ WORKSPACE_DIR = r"d:\Downloads\Videos"
 if not os.path.exists(WORKSPACE_DIR):
     WORKSPACE_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
 
-VERSION = "2.1"
+VERSION = "2.2"
 
 def format_size(bytes_val):
     if bytes_val < 1024:
@@ -38,39 +37,43 @@ def format_size(bytes_val):
 def interactive_select(options, prompt):
     if not options:
         return None
-    selected = 0
-    while True:
-        os.system('cls')
-        print(f"\033[1;35m{prompt} (v{VERSION})\033[0m")
-        print("\033[1;30m" + "=" * len(prompt) + "\033[0m")
-        print("\033[33mUse Up/Down Arrow keys to navigate, Enter to select, Esc to cancel.\033[0m\n")
         
-        for idx, opt in enumerate(options):
-            label = opt if isinstance(opt, str) else opt.get('label', '')
-            if idx == selected:
-                print(f" \033[1;36m-> {label}\033[0m")
-            else:
-                print(f"    {label}")
-                
-        key = msvcrt.getch()
-        if key == b'\xe0' or key == b'\x00':  # Arrow key prefix
-            sub_key = msvcrt.getch()
-            if sub_key == b'H':  # Up
-                selected = (selected - 1) % len(options)
-            elif sub_key == b'P':  # Down
-                selected = (selected + 1) % len(options)
-        elif key == b'\r':  # Enter
-            return options[selected]
-        elif key == b'\x1b':  # Esc
-            return None
+    print(f"\n\033[1;35m{prompt} (v{VERSION})\033[0m")
+    print("\033[1;30m" + "=" * (len(prompt) + 7) + "\033[0m")
+    
+    for idx, opt in enumerate(options, 1):
+        label = opt if isinstance(opt, str) else opt.get('label', '')
+        print(f"  \033[1;36m[{idx}]\033[0m {label}")
+        
+    print(f"  \033[1;31m[c]\033[0m Cancel / Go Back")
+    
+    while True:
+        try:
+            choice = input(f"\n\033[1;35mSelect an option (1-{len(options)} or c): \033[0m").strip().lower()
+            if choice == 'c':
+                return None
+            val = int(choice)
+            if 1 <= val <= len(options):
+                return options[val - 1]
+            print(f"\033[1;31mInvalid choice. Please enter a number between 1 and {len(options)}, or 'c'.\033[0m")
+        except ValueError:
+            print("\033[1;31mInvalid input. Please enter a valid number or 'c'.\033[0m")
 
-def search_season_pack(show_title, season_num=None):
+def search_season_pack(show_title, season_num=None, max_season=None):
     if season_num is None:
-        queries = [
-            f"{show_title} Complete",
-            f"{show_title} S01 S08",
-            f"{show_title} Season 1 2 3 4"
-        ]
+        if max_season:
+            queries = [
+                f"{show_title} Complete Series",
+                f"{show_title} S01 S{max_season:02d}",
+                f"{show_title} Season 1-{max_season}",
+                f"{show_title} Seasons 1 to {max_season}",
+                f"{show_title} Complete"
+            ]
+        else:
+            queries = [
+                f"{show_title} Complete Series",
+                f"{show_title} Complete"
+            ]
     else:
         queries = [
             f"{show_title} Season {season_num}",
@@ -97,8 +100,37 @@ def search_season_pack(show_title, season_num=None):
                 if not s_pattern.search(name):
                     continue
             else:
-                pack_keywords = ['complete', 'season 1', 's01', 's1', 'seasons']
-                if not any(kw in name.lower() for kw in pack_keywords):
+                # We want a complete series pack, not a single season pack
+                name_lower = name.lower()
+                is_explicit_complete = any(kw in name_lower for kw in ['complete series', 'complete show', 'all seasons', 'complete boxset', 'full series', 'complete collection'])
+                
+                has_range = False
+                if max_season:
+                    range_patterns = [
+                        rf's0?1\s*[-–to]\s*s0?{max_season}\b',
+                        rf's0?1\s*[-–to]\s*0?{max_season}\b',
+                        rf'season\s*0?1\s*[-–to]\s*0?{max_season}\b',
+                        rf'seasons\s*0?1\s*[-–to]\s*0?{max_season}\b',
+                        rf'seasons\s*0?1\s*and\s*0?{max_season}\b'
+                    ]
+                    for pattern in range_patterns:
+                        if re.search(pattern, name_lower):
+                            has_range = True
+                            break
+                            
+                is_generic_complete = False
+                if 'complete' in name_lower or 'seasons' in name_lower:
+                    if max_season and max_season > 1:
+                        # Exclude single season packs
+                        seasons_mentioned = set()
+                        for s_val in range(1, max_season + 1):
+                            if re.search(rf'\b(season\s*{s_val}\b|s{s_val:02d}\b|s{s_val}\b)', name_lower):
+                                seasons_mentioned.add(s_val)
+                        if len(seasons_mentioned) == 1:
+                            continue
+                    is_generic_complete = True
+                    
+                if not (is_explicit_complete or has_range or is_generic_complete):
                     continue
                     
             size_bytes = int(item.get('size', 0))
@@ -372,7 +404,7 @@ def main():
         
         # Search Season Pack
         print(f"\033[1;34m[*] Searching for season/series pack on APIBay...\033[0m")
-        torrent_pack = search_season_pack(show_title, target_season)
+        torrent_pack = search_season_pack(show_title, target_season, max_season=seasons[-1] if seasons else None)
         
         if torrent_pack:
             # We found a pack!
