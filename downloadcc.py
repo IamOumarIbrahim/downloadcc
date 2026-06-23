@@ -23,6 +23,8 @@ WORKSPACE_DIR = r"d:\Downloads\Videos"
 if not os.path.exists(WORKSPACE_DIR):
     WORKSPACE_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
 
+VERSION = "1.1"
+
 def format_size(bytes_val):
     if bytes_val < 1024:
         return f"{bytes_val} B"
@@ -39,7 +41,7 @@ def interactive_select(options, prompt):
     selected = 0
     while True:
         os.system('cls')
-        print(f"\033[1;35m{prompt}\033[0m")
+        print(f"\033[1;35m{prompt} (v{VERSION})\033[0m")
         print("\033[1;30m" + "=" * len(prompt) + "\033[0m")
         print("\033[33mUse Up/Down Arrow keys to navigate, Enter to select, Esc to cancel.\033[0m\n")
         
@@ -242,7 +244,21 @@ def post_process_files(staging_dir, dest_dir, is_movie=False):
         pass
     print(f"\033[1;32m[+] Finished organizing {renamed} files.\033[0m")
 
+def prompt_output_path():
+    print(f"\n\033[1;35m[?] Where would you like to save the files?\033[0m")
+    print(f"\033[1;30m(Press Enter to use default: {WORKSPACE_DIR})\033[0m")
+    user_path = input("Path: ").strip()
+    if user_path:
+        # Expand environment variables or ~ paths
+        expanded = os.path.abspath(os.path.expanduser(user_path))
+        print(f"\033[32m[+] Target directory set to: {expanded}\033[0m")
+        return expanded
+    return WORKSPACE_DIR
+
 def main():
+    print(f"\033[1;35mMovies & Shows CLI Downloader (v{VERSION})\033[0m")
+    print("\033[1;30m" + "=" * 40 + "\033[0m")
+    
     if len(sys.argv) < 2:
         query = input("\033[1;35mEnter the movie or TV show name to search: \033[0m").strip()
     else:
@@ -312,6 +328,9 @@ def main():
             
         target_season = season_sel['val']
         
+        # Prompt for target path
+        dest_workspace = prompt_output_path()
+        
         # Search Season Pack
         print(f"\033[1;34m[*] Searching for season/series pack on APIBay...\033[0m")
         torrent_pack = search_season_pack(show_title, target_season)
@@ -323,8 +342,8 @@ def main():
                 show_folder_name = f"{show_title} - Season {target_season:02d}"
                 
             show_folder_name = re.sub(r'[\\/*?:"<>|]', "", show_folder_name)
-            dest_dir = os.path.join(WORKSPACE_DIR, show_folder_name)
-            staging_dir = os.path.join(WORKSPACE_DIR, "staging_temp_" + str(int(time.time())))
+            dest_dir = os.path.join(dest_workspace, show_folder_name)
+            staging_dir = os.path.join(dest_workspace, "staging_temp_" + str(int(time.time())))
             
             success = download_torrent(torrent_pack['info_hash'], torrent_pack['name'], dest_dir, staging_dir)
             if success:
@@ -338,7 +357,7 @@ def main():
             if target_season is not None:
                 show_folder_name = f"{show_title} - Season {target_season:02d}"
             show_folder_name = re.sub(r'[\\/*?:"<>|]', "", show_folder_name)
-            dest_dir = os.path.join(WORKSPACE_DIR, show_folder_name)
+            dest_dir = os.path.join(dest_workspace, show_folder_name)
             
             print(f"[*] Queueing {len(target_eps)} episodes...")
             for idx, ep in enumerate(target_eps, 1):
@@ -348,7 +367,7 @@ def main():
                 ep_torrent = search_engine.find_best_episode_torrent(show_title, ep_season, ep_num, imdb_id=selection['imdb_id'])
                 
                 if ep_torrent:
-                    staging_dir = os.path.join(WORKSPACE_DIR, f"staging_temp_ep_{ep_season:02d}_{ep_num:02d}")
+                    staging_dir = os.path.join(dest_workspace, f"staging_temp_ep_{ep_season:02d}_{ep_num:02d}")
                     success = download_torrent(ep_torrent['info_hash'], ep_torrent['name'], dest_dir, staging_dir)
                     if success:
                         post_process_files(staging_dir, dest_dir, is_movie=False)
@@ -360,9 +379,12 @@ def main():
         movie_title = selection['title']
         info_hash = selection['info_hash']
         
+        # Prompt for target path
+        dest_workspace = prompt_output_path()
+        
         movie_folder_name = re.sub(r'[\\/*?:"<>|]', "", movie_title)
-        dest_dir = os.path.join(WORKSPACE_DIR, movie_folder_name)
-        staging_dir = os.path.join(WORKSPACE_DIR, "staging_temp_" + str(int(time.time())))
+        dest_dir = os.path.join(dest_workspace, movie_folder_name)
+        staging_dir = os.path.join(dest_workspace, "staging_temp_" + str(int(time.time())))
         
         success = download_torrent(info_hash, movie_title, dest_dir, staging_dir)
         if success:

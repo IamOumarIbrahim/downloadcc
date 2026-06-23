@@ -2,7 +2,7 @@
 ; See https://www.jrsoftware.org/ishelp/ for details on creating Inno Setup scripts.
 
 #define MyAppName "Movies & TV Shows Downloader"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "Oumar Ibrahim"
 #define MyAppExeName "MoviesAndShowsDownloader.exe"
 

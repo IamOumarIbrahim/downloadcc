@@ -131,6 +131,7 @@ Launch the interactive terminal-based media downloader:
 python downloadcc.py "Vampire Diaries"
 ```
 * **Controls**: Use the **Up/Down arrow keys** to navigate, **Enter** to select, and **Esc** to cancel.
+* **Save Directory Prompt (New in v1.1)**: After selecting your show/movie, the CLI prompts you to input the destination path where you'd like to save the files. It supports env variable expansion and relative path resolution, defaulting to `d:\Downloads\Videos` (or user Downloads folder if unavailable) if left blank.
 * **Auto-naming**: Automatically structures downloaded content to `S_XX_E_YY.mp4` for iPad playback.
 
 ---
