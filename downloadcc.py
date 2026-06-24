@@ -31,7 +31,7 @@ WORKSPACE_DIR = r"d:\Downloads\Videos"
 if not os.path.exists(WORKSPACE_DIR):
     WORKSPACE_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
 
-VERSION = "3.4"
+VERSION = "3.5"
 
 # Parallel Queue Concurrency Configurations
 MAX_PARALLEL_DOWNLOADS = 3
@@ -964,29 +964,66 @@ def get_upload_target(target_name=None):
         print("\033[1;33mNo folders or files found in workspace to upload.\033[0m")
         return None
         
-    selection = interactive_select(options, "Select Folder/File to Upload to VLC")
+    selection = interactive_select(options, "Select Folder/File to Upload to VLC Device")
     if selection:
         return selection['path']
     return None
 
 def run_vlc_upload(target_name=None):
     config = load_config()
-    last_vlc_ip = config.get('last_vlc_ip', '')
-    
+
+    # --- Device picker ---
+    ipad_ip   = config.get('vlc_ipad_ip',   '')
+    iphone_ip = config.get('vlc_iphone_ip', '')
+
+    def _device_label(name, ip):
+        return f'{name}  [{ip}]' if ip else f'{name}  [not set]'
+
+    device_options = [
+        {'label': _device_label('iPad  ', ipad_ip),   'ip': ipad_ip,   'key': 'vlc_ipad_ip'},
+        {'label': _device_label('iPhone', iphone_ip), 'ip': iphone_ip, 'key': 'vlc_iphone_ip'},
+        {'label': 'Custom IP / hostname',              'ip': None,       'key': None},
+    ]
+
     print(f"\n\033[1;35m--- VLC WiFi Sharing Uploader ---\033[0m")
-    prompt_str = f"Enter the VLC WiFi Sharing URL/IP [{last_vlc_ip}]: " if last_vlc_ip else "Enter the VLC WiFi Sharing URL/IP (e.g. 192.168.1.100:8080): "
-    vlc_ip = input(prompt_str).strip()
-    if not vlc_ip:
-        vlc_ip = last_vlc_ip
-        
-    if not vlc_ip:
-        print("\033[1;31mError: No VLC WiFi Sharing URL/IP specified.\033[0m")
+    device_choice = interactive_select(device_options, "Select Target Device")
+    if not device_choice:
         return
-        
-    if not vlc_ip.startswith('http://') and not vlc_ip.startswith('https://'):
-        vlc_ip = "http://" + vlc_ip
-        
-    config['last_vlc_ip'] = vlc_ip
+
+    if device_choice['ip'] is None:
+        # Custom entry
+        last_custom = config.get('vlc_custom_ip', '')
+        prompt_str = f"Enter the VLC WiFi Sharing URL/IP [{last_custom}]: " if last_custom else "Enter the VLC WiFi Sharing URL/IP (e.g. 192.168.1.100): "
+        vlc_ip = input(prompt_str).strip() or last_custom
+        if not vlc_ip:
+            print("\033[1;31mError: No VLC WiFi Sharing URL/IP specified.\033[0m")
+            return
+        if not vlc_ip.startswith('http://') and not vlc_ip.startswith('https://'):
+            vlc_ip = 'http://' + vlc_ip
+        config['vlc_custom_ip'] = vlc_ip
+    else:
+        vlc_ip = device_choice['ip']
+        device_name = device_choice['label'].split('[')[0].strip()
+        if not vlc_ip:
+            # First-time setup for this device
+            print(f"\033[1;33m[!] No IP saved for {device_name} yet.\033[0m")
+            vlc_ip = input(f"Enter the VLC WiFi Sharing URL/IP for {device_name} (e.g. 192.168.1.100): ").strip()
+            if not vlc_ip:
+                print("\033[1;31mError: No IP entered.\033[0m")
+                return
+            if not vlc_ip.startswith('http://') and not vlc_ip.startswith('https://'):
+                vlc_ip = 'http://' + vlc_ip
+            config[device_choice['key']] = vlc_ip
+        else:
+            # Let the user confirm or override the saved IP
+            prompt_str = f"VLC IP for {device_name} [{vlc_ip}] (Enter to confirm): "
+            override = input(prompt_str).strip()
+            if override:
+                if not override.startswith('http://') and not override.startswith('https://'):
+                    override = 'http://' + override
+                vlc_ip = override
+                config[device_choice['key']] = vlc_ip
+
     save_config(config)
     
     upload_target = get_upload_target(target_name)
@@ -1010,7 +1047,7 @@ def run_vlc_upload(target_name=None):
         print("\033[1;31mNo compatible video files found to upload.\033[0m")
         return
         
-    upload_url = f"{vlc_ip.rstrip('/')}/upload"
+    upload_url = f"{vlc_ip.rstrip('/')}/upload.json"
     print(f"\033[1;34m[*] Connecting to VLC at {vlc_ip}...\033[0m")
     try:
         r = requests.get(vlc_ip, timeout=5)
@@ -1022,6 +1059,7 @@ def run_vlc_upload(target_name=None):
         return
         
     print(f"\n\033[1;34m[*] Uploading {len(files_to_upload)} files...\033[0m")
+    failed_files = []
     for idx, filepath in enumerate(files_to_upload, 1):
         filename = os.path.basename(filepath)
         print(f"\n\033[1;36m[{idx}/{len(files_to_upload)}] {filename} ({format_size(os.path.getsize(filepath))})\033[0m")
@@ -1035,17 +1073,129 @@ def run_vlc_upload(target_name=None):
             
         try:
             wrapped_file = ProgressFileWrapper(filepath, progress_callback)
-            response = requests.post(upload_url, files={'file': (filename, wrapped_file, 'video/mp4')}, timeout=600)
+            response = requests.post(upload_url, files={'files[]': (filename, wrapped_file, 'video/mp4')}, timeout=600)
             wrapped_file.close()
             
             if response.status_code in [200, 201, 204]:
                 print(f"\n\033[1;32m[+] Successfully uploaded: {filename}\033[0m")
             else:
                 print(f"\n\033[1;31m[!] Failed to upload {filename}. Status: {response.status_code}\033[0m")
+                failed_files.append(filepath)
         except Exception as e:
             print(f"\n\033[1;31m[!] Upload error for {filename}: {e}\033[0m")
-            
-    print(f"\n\033[1;32m[+] All uploads completed!\033[0m")
+            failed_files.append(filepath)
+
+    # Save failed uploads log so the user can retry them
+    failed_log_path = os.path.join(QUEUE_DIR, 'failed_uploads.json')
+    if failed_files:
+        try:
+            with open(failed_log_path, 'w') as f:
+                json.dump({'vlc_ip': vlc_ip, 'files': failed_files}, f, indent=2)
+        except Exception as e:
+            print(f"\033[1;33m[!] Could not save failed-uploads log: {e}\033[0m")
+        print(f"\n\033[1;33m[!] {len(failed_files)} file(s) failed. Run \033[1;36mdownloadcc vlc retry\033[1;33m to re-upload them.\033[0m")
+    else:
+        # Clear any previous failed log on a clean run
+        if os.path.exists(failed_log_path):
+            try:
+                os.remove(failed_log_path)
+            except:
+                pass
+        print(f"\n\033[1;32m[+] All uploads completed successfully!\033[0m")
+
+
+def run_vlc_retry():
+    """Re-upload files that failed during the last VLC upload batch."""
+    failed_log_path = os.path.join(QUEUE_DIR, 'failed_uploads.json')
+    if not os.path.exists(failed_log_path):
+        print("\033[1;33mNo failed uploads log found. Nothing to retry.\033[0m")
+        return
+
+    try:
+        with open(failed_log_path, 'r') as f:
+            log = json.load(f)
+    except Exception as e:
+        print(f"\033[1;31mError reading failed uploads log: {e}\033[0m")
+        return
+
+    vlc_ip   = log.get('vlc_ip', '')
+    files_to_upload = [p for p in log.get('files', []) if os.path.exists(p)]
+    missing  = [p for p in log.get('files', []) if not os.path.exists(p)]
+
+    if not vlc_ip:
+        print("\033[1;31mNo VLC IP stored in failed uploads log.\033[0m")
+        return
+
+    print(f"\n\033[1;35m--- VLC Retry Uploader ---\033[0m")
+    print(f"\033[1;34mDevice : {vlc_ip}\033[0m")
+    print(f"\033[1;34mFiles  : {len(files_to_upload)} to retry", end="")
+    if missing:
+        print(f" (\033[1;33m{len(missing)} not found on disk, skipped\033[0m)", end="")
+    print("\033[0m")
+
+    if not files_to_upload:
+        print("\033[1;33mNo files available to retry.\033[0m")
+        return
+
+    # Allow overriding the IP (e.g. after reconnecting with ipad.local)
+    override = input(f"\nPress Enter to use [{vlc_ip}] or type a new IP: ").strip()
+    if override:
+        if not override.startswith('http://') and not override.startswith('https://'):
+            override = 'http://' + override
+        vlc_ip = override
+
+    upload_url = f"{vlc_ip.rstrip('/')}/upload.json"
+    print(f"\033[1;34m[*] Connecting to VLC at {vlc_ip}...\033[0m")
+    try:
+        r = requests.get(vlc_ip, timeout=5)
+        if r.status_code != 200:
+            print(f"\033[1;31m[!] Warning: VLC returned status {r.status_code}. Attempting upload anyway...\033[0m")
+    except Exception as e:
+        print(f"\033[1;31m[!] Error connecting to {vlc_ip}: {e}\033[0m")
+        print("\033[1;31mMake sure VLC is open and WiFi Sharing is enabled!\033[0m")
+        return
+
+    print(f"\n\033[1;34m[*] Retrying {len(files_to_upload)} file(s)...\033[0m")
+    still_failed = []
+    for idx, filepath in enumerate(files_to_upload, 1):
+        filename = os.path.basename(filepath)
+        print(f"\n\033[1;36m[{idx}/{len(files_to_upload)}] {filename} ({format_size(os.path.getsize(filepath))})\033[0m")
+
+        def progress_callback(bytes_read, total_size):
+            progress = (bytes_read / total_size) * 100 if total_size > 0 else 0
+            bar_len = 30
+            filled_len = int(bar_len * bytes_read // total_size) if total_size > 0 else 0
+            bar = '=' * filled_len + '-' * (bar_len - filled_len)
+            print(f"\rUpload Progress: [{bar}] {progress:.1f}% | {format_size(bytes_read)}/{format_size(total_size)}", end="", flush=True)
+
+        try:
+            wrapped_file = ProgressFileWrapper(filepath, progress_callback)
+            response = requests.post(upload_url, files={'files[]': (filename, wrapped_file, 'video/mp4')}, timeout=600)
+            wrapped_file.close()
+            if response.status_code in [200, 201, 204]:
+                print(f"\n\033[1;32m[+] Successfully uploaded: {filename}\033[0m")
+            else:
+                print(f"\n\033[1;31m[!] Failed to upload {filename}. Status: {response.status_code}\033[0m")
+                still_failed.append(filepath)
+        except Exception as e:
+            print(f"\n\033[1;31m[!] Upload error for {filename}: {e}\033[0m")
+            still_failed.append(filepath)
+
+    # Update the log with whatever is still failing
+    if still_failed:
+        try:
+            with open(failed_log_path, 'w') as f:
+                json.dump({'vlc_ip': vlc_ip, 'files': still_failed}, f, indent=2)
+        except:
+            pass
+        print(f"\n\033[1;33m[!] {len(still_failed)} file(s) still failed. Run \033[1;36mdownloadcc vlc retry\033[1;33m again.\033[0m")
+    else:
+        if os.path.exists(failed_log_path):
+            try:
+                os.remove(failed_log_path)
+            except:
+                pass
+        print(f"\n\033[1;32m[+] All retried files uploaded successfully!\033[0m")
 
 
 
@@ -1060,7 +1210,8 @@ def show_help():
     print("  \033[1;32mdownloadcc add \"Query\"\033[0m               - Search and add a new item directly to the background queue.")
     print("  \033[1;32mdownloadcc remove <number>\033[0m           - Remove an item from the queue list by its index number.")
     print("  \033[1;32mdownloadcc clear\033[0m                     - Clear all pending items from the download queue.")
-    print("  \033[1;32mdownloadcc vlc [\"Target\"]\033[0m            - Upload a file/folder wirelessly to VLC on your iPad.")
+    print("  \033[1;32mdownloadcc vlc [\"Target\"]\033[0m            - Upload a file/folder wirelessly to VLC (iPad or iPhone).")
+    print("  \033[1;32mdownloadcc vlc retry\033[0m                 - Re-upload files that failed in the last batch.")
 
     print("  \033[1;32mdownloadcc help\033[0m                      - Show this help menu.")
     print("\033[1;30m" + "=" * 60 + "\033[0m")
@@ -1094,8 +1245,12 @@ def main():
             add_item_to_queue(query)
             return
         elif cmd == 'vlc':
-            target_name = " ".join(args[1:]) if len(args) > 1 else None
-            run_vlc_upload(target_name)
+            sub = args[1].lower() if len(args) > 1 else ''
+            if sub == 'retry':
+                run_vlc_retry()
+            else:
+                target_name = " ".join(args[1:]) if len(args) > 1 else None
+                run_vlc_upload(target_name)
             return
 
         elif cmd in ['help', '--help', '-h']:

@@ -2,7 +2,7 @@
 ; See https://www.jrsoftware.org/ishelp/ for details on creating Inno Setup scripts.
 
 #define MyAppName "downloadcc"
-#define MyAppVersion "3.0"
+#define MyAppVersion "3.5"
 #define MyAppPublisher "Oumar Ibrahim"
 #define MyAppExeName "downloadcc.exe"
 
